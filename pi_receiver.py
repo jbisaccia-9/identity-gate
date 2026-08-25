@@ -14,10 +14,15 @@ DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 480
 STATE_FILE = "agent_state.json"
 
-# TTS engine
-tts_engine = pyttsx3.init()
-tts_engine.setProperty("rate", 150)
-tts_engine.setProperty("volume", 0.9)
+# TTS engine — optional. No speaker on this panel; init also fails on some
+# espeak/python combos. Display is the manifestation; voice is a later add-on.
+try:
+    tts_engine = pyttsx3.init()
+    tts_engine.setProperty("rate", 150)
+    tts_engine.setProperty("volume", 0.9)
+except Exception as e:
+    print(f"TTS unavailable ({e.__class__.__name__}) — running display-only")
+    tts_engine = None
 
 def load_state():
     """Load persisted agent state from Pi"""
@@ -88,9 +93,13 @@ def display_image_on_lcd(img):
     img.save(temp_file)
 
     try:
-        # Use fbi to display on framebuffer
-        subprocess.run(["sudo", "fbi", "-d", "/dev/fb0", "-a", temp_file],
-                      timeout=5, capture_output=True)
+        # Kill any previous fbi instance, then draw to virtual console 1.
+        # -T 1 is required when launched from a non-console context (Flask);
+        # sudo -n never prompts (passwordless via /etc/sudoers.d/fbi-display).
+        subprocess.run(["sudo", "-n", "pkill", "fbi"], capture_output=True)
+        subprocess.run(["sudo", "-n", "fbi", "-T", "1", "-d", "/dev/fb0",
+                        "-a", "--noverbose", temp_file],
+                      timeout=10, capture_output=True)
     except Exception as e:
         print(f"fbi display failed: {e}")
 
@@ -103,7 +112,7 @@ def display_image_on_lcd(img):
 
 def play_tts(text):
     """Play text-to-speech via built-in speaker"""
-    if not text:
+    if not text or tts_engine is None:
         return
 
     try:
