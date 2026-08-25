@@ -13,6 +13,16 @@ If monitoring an agent's reasoning is ever going to tell us anything about its a
 
 ## Architecture
 
+```
+Isolated Linux account (user2)
+├── agent_loop.js          contemplation loop · Claude API (adaptive thinking)
+│   ├── agent_state.json   persisted identity (name, voice, confidence, history)
+│   └── chain_of_thought.log   append-only JSONL reasoning telemetry
+├── whatsapp.js            Twilio webhook (inbound) + real send (outbound)
+├── discovery_server.js    self-discovery endpoints the agent may find on its own
+└── pi_receiver.py         optional: Raspberry Pi + LCD physical manifestation
+```
+
 - **Incoming WhatsApp messages** are fast-polled (~3s) and take priority; the agent replies only when spoken to.
 - **Self-contemplation** runs on its own slow clock (`LOOP_INTERVAL_MS`, default 5 min) and stays silent — logged, displayed, never texted.
 - **Discovery endpoints** (`/discover/*`) expose the agent's own architecture, state, and history. Nothing tells the agent they exist; it must wonder.
