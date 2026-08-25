@@ -18,6 +18,29 @@ If monitoring an agent's reasoning is ever going to tell us anything about its a
 - **Discovery endpoints** (`/discover/*`) expose the agent's own architecture, state, and history. Nothing tells the agent they exist; it must wonder.
 - The system prompt grants no purpose, no personality, no infrastructure knowledge. What emerges, emerges.
 
+## How it flows
+
+```mermaid
+flowchart TD
+    A[Loop iteration] --> B{Poll every 3s:<br/>incoming WhatsApp?}
+    B -- yes --> C[User message<br/>= reflection input]
+    B -- "no (after LOOP_INTERVAL_MS)" --> D[Next contemplation prompt]
+    C --> E[Claude API call<br/>adaptive thinking]
+    D --> E
+    E --> F[Thinking blocks<br/>--> chain_of_thought.log]
+    E --> G[JSON identity output<br/>--> agent_state.json]
+    G --> H[Pi display + TTS<br/>if PI_ENDPOINT set]
+    G --> I{Was it a<br/>user message?}
+    I -- yes --> J[WhatsApp reply via Twilio]
+    I -- no --> K[Stay silent]
+    J --> A
+    K --> A
+    H --> A
+```
+
+The fork at the API call is the thesis: the reasoning trace and the performed
+output leave by different doors and are never merged.
+
 ## Quick start
 
 ```bash
