@@ -1,0 +1,11 @@
+.env
+agent_state.json
+chain_of_thought.log
+*.log
+node_modules/
+venv/
+__pycache__/
+*.pyc
+ngrok
+ngrok-*.tgz
+.DS_Store
