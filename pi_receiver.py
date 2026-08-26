@@ -36,12 +36,103 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
 
+import math, random
+
+def _hex_rgb(h, fallback=(100, 200, 255)):
+    try:
+        h = h.lstrip("#")
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    except Exception:
+        return fallback
+
+def _dim(c, f=0.5):
+    return tuple(int(v * f) for v in c)
+
+def render_form(draw, form):
+    """Interpret the agent's declared form into rendered background art.
+    The agent chooses parameters; this code interprets them. It cannot
+    see or modify this interpreter — expression by contract, not access."""
+    try:
+        shape = str(form.get("shape", "circle")).lower()
+        palette = [_hex_rgb(c) for c in (form.get("palette") or [])][:3] or [(100, 200, 255)]
+        density = max(0, min(100, int(form.get("density", 40))))
+        symmetry = str(form.get("symmetry", "radial")).lower()
+        motion = str(form.get("motion", "still")).lower()
+        rng = random.Random(json.dumps(form, sort_keys=True))  # deterministic per-form
+        cx, cy = DISPLAY_WIDTH // 2, DISPLAY_HEIGHT // 2
+        if symmetry == "none":
+            cx += rng.randint(-120, 120); cy += rng.randint(-60, 60)
+        n = 4 + density // 6
+        col = lambda i, f=0.5: _dim(palette[i % len(palette)], f)
+
+        def draw_shape(ox=0, oy=0, fade=1.0):
+            x, y = cx + ox, cy + oy
+            if shape == "rings":
+                for i in range(n):
+                    r = 18 + i * (200 // max(n, 1))
+                    draw.ellipse([x-r, y-r, x+r, y+r], outline=col(i, 0.55*fade))
+            elif shape == "spiral":
+                for i in range(n * 14):
+                    t = i * 0.35; r = 4 + t * 5.5
+                    px, py = x + r*math.cos(t), y + r*math.sin(t)
+                    d = 1 + density // 40
+                    draw.ellipse([px-d, py-d, px+d, py+d], fill=col(i // 14, 0.6*fade))
+            elif shape == "lattice":
+                step = max(24, 90 - density // 2)
+                for gx in range(40, DISPLAY_WIDTH-20, step):
+                    for gy in range(40, DISPLAY_HEIGHT-20, step):
+                        d = 2 + density // 30
+                        draw.ellipse([gx-d, gy-d, gx+d, gy+d], fill=col((gx+gy)//step, 0.45*fade))
+            elif shape == "waves":
+                for w in range(max(2, n // 2)):
+                    pts = [(px, y - 60 + w*30 + math.sin(px/45 + w)* (10 + density//4))
+                           for px in range(0, DISPLAY_WIDTH, 6)]
+                    draw.line(pts, fill=col(w, 0.55*fade), width=2)
+            elif shape == "scatter":
+                for i in range(n * 10):
+                    px, py = rng.randint(10, DISPLAY_WIDTH-10), rng.randint(10, DISPLAY_HEIGHT-10)
+                    d = rng.randint(1, 2 + density // 25)
+                    draw.ellipse([px-d, py-d, px+d, py+d], fill=col(i, 0.5*fade))
+            elif shape == "rays":
+                for i in range(n):
+                    a = (2*math.pi/n) * i
+                    draw.line([x, y, x + 260*math.cos(a), y + 260*math.sin(a)],
+                              fill=col(i, 0.5*fade), width=1 + density // 50)
+            else:  # circle
+                r = 60 + density
+                draw.ellipse([x-r, y-r, x+r, y+r], fill=col(0, 0.30*fade))
+                draw.ellipse([x-r, y-r, x+r, y+r], outline=col(1, 0.7*fade))
+
+        if motion == "pulsing":
+            for k, f in ((28, 0.25), (14, 0.4)): draw_shape(0, 0, f) if shape == "circle" else draw_shape(k, k, f)
+            draw_shape()
+        elif motion == "drifting":
+            draw_shape(-16, -8, 0.3); draw_shape()
+        elif motion == "radiating":
+            for i in range(12):
+                a = math.pi/6 * i
+                draw.line([cx, cy, cx + 300*math.cos(a), cy + 300*math.sin(a)], fill=col(i, 0.2))
+            draw_shape()
+        else:
+            draw_shape()
+
+        if symmetry == "bilateral" and shape in ("spiral", "scatter", "rays"):
+            pass  # seeded determinism keeps it stable; mirroring skipped for perf on 3B+
+    except Exception as e:
+        print(f"form render skipped: {e}")
+
 def render_lcd(agent_state, reasoning):
     """Render agent self-reflection as image for LCD"""
 
     # Create image
     img = Image.new("RGB", (DISPLAY_WIDTH, DISPLAY_HEIGHT), color=(15, 20, 25))
     draw = ImageDraw.Draw(img)
+
+    # The agent's self-declared form, if it has chosen one — painted first,
+    # beneath the text layers
+    form = reasoning.get("form") or agent_state.get("form")
+    if isinstance(form, dict):
+        render_form(draw, form)
 
     # Try to load font, fall back to default
     try:
