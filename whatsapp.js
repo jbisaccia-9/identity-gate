@@ -50,8 +50,12 @@ export function startWhatsAppServer(port = 3000) {
   app.post("/incoming", (req, res) => {
     const body = req.body.Body;
     const from = req.body.From;
+    const numMedia = parseInt(req.body.NumMedia || "0", 10);
+    const media = numMedia > 0
+      ? { url: req.body.MediaUrl0, contentType: req.body.MediaContentType0 }
+      : null;
     console.log(`\n📨 Incoming WhatsApp from ${from}: "${body}"`);
-    incomingQueue.push({ body, from, timestamp: Date.now() });
+    incomingQueue.push({ body, from, media, timestamp: Date.now() });
 
     // Empty TwiML response — we reply asynchronously from the agent loop,
     // not synchronously in the webhook handler (Claude calls can take

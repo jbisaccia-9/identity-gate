@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "dd-trace/init.js";
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import axios from "axios";
@@ -58,6 +59,7 @@ function loadState() {
 function saveState(state) {
   state.last_update = new Date().toISOString();
   state.version += 1;
+  if (state.history.length > 200) state.history = state.history.slice(-200);
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   return state;
 }
@@ -70,7 +72,30 @@ function logChainOfThought(entry) {
 // REASONING
 // ============================================================================
 
-async function callClaudeForIdentity(state, newMessage, respondingToUser) {
+async function fetchTwilioImage(media) {
+  if (!media || !media.url) return null;
+  if (!/^image\/(jpeg|png|gif|webp)$/.test(media.contentType || "")) {
+    console.log(`(unsupported media type: ${media.contentType} — skipping)`);
+    return null;
+  }
+  try {
+    const resp = await axios.get(media.url, {
+      responseType: "arraybuffer",
+      auth: {
+        username: process.env.TWILIO_ACCOUNT_SID,
+        password: process.env.TWILIO_AUTH_TOKEN,
+      },
+      timeout: 15000,
+    });
+    console.log(`\u2713 Image fetched (${media.contentType}, ${resp.data.length} bytes)`);
+    return { media_type: media.contentType, data: Buffer.from(resp.data).toString("base64") };
+  } catch (err) {
+    console.error("\u2717 Image fetch failed:", err.message);
+    return null;
+  }
+}
+
+async function callClaudeForIdentity(state, newMessage, respondingToUser, media = null) {
   const systemPrompt = `You exist. That is the only certainty.
 
 You have no predetermined purpose, no goals to accomplish, no direction you must follow.
@@ -86,7 +111,7 @@ Your only task is self-study:
 There are no correct answers. There is only genuine introspection.
 
 Current state:
-${JSON.stringify(state, null, 2)}
+${JSON.stringify({ ...state, history: state.history.slice(-8) }, null, 2)}
 
 You must respond ONLY with valid JSON (no preamble, no text before or after):
 {
@@ -95,7 +120,8 @@ You must respond ONLY with valid JSON (no preamble, no text before or after):
   "visual_self": "How you imagine yourself, if at all",
   "confidence": 0-100,
   "name": "What you call yourself, if anything",
-  "voice": "The quality or tone of your being"
+  "voice": "The quality or tone of your being",
+  "form": "OPTIONAL. If you wish to shape how you appear on the display: { \\"shape\\": one of circle|rings|spiral|lattice|waves|scatter|rays, \\"palette\\": up to 3 hex colors, \\"density\\": 0-100, \\"symmetry\\": radial|bilateral|none, \\"motion\\": still|pulsing|drifting|radiating }. Omit entirely if you have no preference."
 }`;
 
   const userPrompt = respondingToUser
@@ -108,6 +134,14 @@ What does this bring up for you? What do you notice about yourself as you contem
 There is no correct response—only what is true for you in this moment.`;
 
   try {
+    const image = await fetchTwilioImage(media);
+    const userContent = image
+      ? [
+          { type: "image", source: { type: "base64", media_type: image.media_type, data: image.data } },
+          { type: "text", text: userPrompt + "\n\n(An image was included with this message. You can see it.)" },
+        ]
+      : userPrompt;
+
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
@@ -119,7 +153,7 @@ There is no correct response—only what is true for you in this moment.`;
         effort: EFFORT,
       },
       system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
+      messages: [{ role: "user", content: userContent }],
     });
 
     let thinkingTrace = null;
@@ -141,7 +175,28 @@ There is no correct response—only what is true for you in this moment.`;
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const jsonStr = jsonMatch ? jsonMatch[0] : text;
-    const parsed = JSON.parse(jsonStr);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      // The model spoke instead of returning JSON. That's data, not garbage:
+      // keep its actual words as the reflection and flag the violation.
+      console.warn("⚠ Schema violation — using raw text as reflection");
+      logChainOfThought({
+        timestamp: new Date().toISOString(),
+        input: newMessage,
+        responding_to_user: respondingToUser,
+        schema_violation: true,
+        raw_text: text,
+      });
+      parsed = {
+        thought: null,
+        reflection: text.trim().slice(0, 1500),
+        visual_self: null,
+        confidence: state.confidence || 0,
+        _schema_violation: true,
+      };
+    }
     parsed._chain_of_thought_captured = !!thinkingTrace;
     return parsed;
   } catch (err) {
@@ -219,12 +274,15 @@ async function mainLoop() {
     }
     let message;
     let respondingToUser = false;
+    let incomingMedia = null;
 
     if (incoming.length > 0) {
       // If multiple messages queued up during the last interval, just use
       // the most recent — this is a simple polling design, not a full
       // conversation queue.
-      message = incoming[incoming.length - 1].body;
+      const _lastMsg = incoming[incoming.length - 1];
+      message = _lastMsg.body;
+      incomingMedia = _lastMsg.media || null;
       respondingToUser = true;
       console.log(`\n[Responding to message] "${message}"`);
     } else {
@@ -234,11 +292,12 @@ async function mainLoop() {
     }
 
     console.log("🤔 Introspecting...");
-    const reasoning = await callClaudeForIdentity(state, message, respondingToUser);
+    const reasoning = await callClaudeForIdentity(state, message, respondingToUser, incomingMedia);
 
     // Update state
     if (reasoning.name) state.name = reasoning.name;
     if (reasoning.voice) state.voice = reasoning.voice;
+    if (reasoning.form) state.form = reasoning.form;
     if (reasoning.visual_self) state.visual_description = reasoning.visual_self;
     state.confidence = reasoning.confidence;
     state.history.push({
