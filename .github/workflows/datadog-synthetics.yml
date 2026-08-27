@@ -15,6 +15,7 @@ name: Run Datadog Synthetic tests
 
 on:
   push:
+    paths-ignore: ['telemetry/**', 'README.md']
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]

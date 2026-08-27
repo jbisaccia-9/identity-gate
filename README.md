@@ -30,6 +30,7 @@ Isolated Linux account (user2)
 
 ## How it flows
 
+<!-- FLOW:BEGIN (auto-generated — do not edit by hand) -->
 ```mermaid
 flowchart TD
     A[Loop iteration] --> B{Poll every 3s:<br/>incoming WhatsApp?}
@@ -47,6 +48,7 @@ flowchart TD
     K --> A
     H --> A
 ```
+<!-- FLOW:END -->
 
 The fork at the API call is the thesis: the reasoning trace and the performed
 output leave by different doors and are never merged.
