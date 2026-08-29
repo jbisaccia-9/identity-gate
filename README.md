@@ -49,11 +49,11 @@ flowchart TD
     H --> A
     classDef active fill:#22c55e,stroke:#15803d,color:#fff
     classDef dormant opacity:0.4
-    class A,B,D,E,F,G,H,I,K active
-    class C,J dormant
+    class A,B,C,E,F,G,H,I,J active
+    class D,K dormant
 ```
 
-*Live: loop #1184 · confidence 80% · thinking captured · updated 2026-08-29 05:00:02 UTC*
+*Live: loop #1190 · confidence 80% · thinking captured · updated 2026-08-29 05:15:02 UTC*
 <!-- FLOW:END -->
 
 The fork at the API call is the thesis: the reasoning trace and the performed
