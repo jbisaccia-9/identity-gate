@@ -53,7 +53,7 @@ flowchart TD
     class C,J dormant
 ```
 
-*Live: loop #1647 · confidence 28% · thinking captured · updated 2026-08-30 21:15:02 UTC*
+*Live: loop #1650 · confidence 30% · thinking captured · updated 2026-08-30 21:30:02 UTC*
 <!-- FLOW:END -->
 
 The fork at the API call is the thesis: the reasoning trace and the performed
